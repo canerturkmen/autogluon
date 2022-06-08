@@ -66,7 +66,9 @@ def test_given_hyperparameters_when_learner_called_then_leaderboard_is_correct(
 def test_given_hyperparameters_when_learner_called_then_model_can_predict(
     temp_model_path, hyperparameters, expected_board_length
 ):
-    learner = TimeSeriesLearner(path_context=temp_model_path, eval_metric="MAPE", prediction_length=3)
+    learner = TimeSeriesLearner(
+        path_context=temp_model_path, eval_metric="MAPE", prediction_length=3
+    )
     learner.fit(
         train_data=DUMMY_TS_DATAFRAME,
         hyperparameters=hyperparameters,
@@ -98,16 +100,19 @@ def test_given_hyperparameters_with_spaces_when_learner_called_then_hpo_is_perfo
             train_data=DUMMY_TS_DATAFRAME,
             hyperparameters=hyperparameters,
             val_data=DUMMY_TS_DATAFRAME,
-            hyperparameter_tune=True,
+            hyperparameter_tune_kwargs={
+                "searcher": "random",
+                "scheduler": "FIFO",
+                "num_trials": 2,
+            },
         )
 
         leaderboard = learner.leaderboard()
 
-    assert len(leaderboard) == 3
-
-    config_history = learner.load_trainer().hpo_results[model_name]["config_history"]
-    assert len(config_history) == 3
-    assert all(1 <= model["epochs"] <= 3 for model in config_history.values())
+    assert len(leaderboard) == 2
+    assert all(
+        [1 <= v["params"]["epochs"] < 5 for k, v in learner.load_trainer().model_graph.nodes.items()]
+    )
 
 
 @pytest.mark.parametrize("eval_metric", ["MAPE", None])
@@ -146,7 +151,9 @@ def test_given_hyperparameters_and_custom_models_when_learner_called_then_leader
 def test_given_hyperparameters_when_learner_called_and_loaded_back_then_all_models_can_predict(
     temp_model_path, hyperparameters, expected_board_length
 ):
-    learner = TimeSeriesLearner(path_context=temp_model_path, eval_metric="MAPE", prediction_length=2)
+    learner = TimeSeriesLearner(
+        path_context=temp_model_path, eval_metric="MAPE", prediction_length=2
+    )
     learner.fit(
         train_data=DUMMY_TS_DATAFRAME,
         hyperparameters=hyperparameters,

@@ -255,7 +255,6 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
         prediction_length: Optional[int] = 1,
         eval_metric: Optional[str] = None,
         save_data: bool = True,
-        hyperparameter_tune_kwargs: Optional[Union[str, dict]] = None,
         **kwargs,
     ):
         super().__init__(
@@ -277,7 +276,6 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
         # Dict of FULL model -> normal model validation score in case the normal model had been deleted.
         self._model_full_dict_val_score = {}
         self.eval_metric = check_get_evaluation_metric(eval_metric)
-        self.hyperparameter_tune_kwargs = hyperparameter_tune_kwargs
 
     def save_train_data(self, data: TimeSeriesDataFrame, verbose: bool = True) -> None:
         path = self.path_data + "train.pkl"
@@ -339,9 +337,8 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
         train_data: TimeSeriesDataFrame,
         time_limit: Optional[float] = None,
         val_data: Optional[TimeSeriesDataFrame] = None,
-        hyperparameter_tune_kwargs: Union[str, dict] = None,
+        hyperparameter_tune_kwargs: Optional[Union[str, dict]] = None,
     ):
-        hyperparameter_tune_kwargs = hyperparameter_tune_kwargs or self.hyperparameter_tune_kwargs
         if isinstance(hyperparameter_tune_kwargs, str):
             hyperparameter_tune_kwargs: Dict[str, Any] = FORECASTING_HPO_PRESETS.get(hyperparameter_tune_kwargs)
         if hyperparameter_tune_kwargs is None:
@@ -429,7 +426,7 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
         hyperparameters: Optional[Union[str, Dict]] = None,
         models: Optional[List[AbstractTimeSeriesModel]] = None,
         val_data: Optional[TimeSeriesDataFrame] = None,
-        hyperparameter_tune: bool = False,
+        hyperparameter_tune_kwargs: Optional[Union[str, dict]] = None,
         time_limit: Optional[float] = None,
     ) -> List[str]:
         time_start = time.time()
@@ -448,7 +445,7 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
         if models is None:
             models = self.construct_model_templates(
                 hyperparameters=hyperparameters,
-                hyperparameter_tune=hyperparameter_tune,
+                hyperparameter_tune=hyperparameter_tune_kwargs is not None,
                 freq=train_data.freq,
             )
 
@@ -458,13 +455,14 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
 
         model_names_trained = []
         for i, model in enumerate(models):
-            if hyperparameter_tune:
+            if hyperparameter_tune_kwargs is not None:
                 time_left = time_limit_model_split
                 model_names_trained += self.tune_model_hyperparameters(
                     model,
                     time_limit=time_left,
                     train_data=train_data,
                     val_data=val_data,
+                    hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
                 )
             else:
                 time_left = None
@@ -615,7 +613,7 @@ class AbstractTimeSeriesTrainer(SimpleAbstractTrainer):
                 train_data=refit_full_data,
                 val_data=None,
                 hyperparameters=None,
-                hyperparameter_tune=False,
+                hyperparameter_tune_kwargs=None,
                 models=[model_full],
             )
 

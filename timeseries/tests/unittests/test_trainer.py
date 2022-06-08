@@ -162,17 +162,16 @@ def test_given_hyperparameters_with_spaces_when_trainer_called_then_hpo_is_perfo
     trainer = AutoTimeSeriesTrainer(
         path=temp_model_path,
         freq="H",
-        hyperparameter_tune_kwargs={
-            "num_samples": 2,
-            "searcher": "random",
-            "scheduler": "FIFO",
-        },
     )
     trainer.fit(
         train_data=DUMMY_TS_DATAFRAME,
         hyperparameters=hyperparameters,
         val_data=DUMMY_TS_DATAFRAME,
-        hyperparameter_tune=True,
+        hyperparameter_tune_kwargs={
+            "num_samples": 2,
+            "searcher": "random",
+            "scheduler": "FIFO",
+        },
     )
     leaderboard = trainer.leaderboard()
 
@@ -242,11 +241,15 @@ def test_given_hyperparameters_with_spaces_to_prophet_when_trainer_called_then_h
             train_data=DUMMY_TS_DATAFRAME,
             hyperparameters=hyperparameters,
             val_data=DUMMY_TS_DATAFRAME,
-            hyperparameter_tune=True,
+            hyperparameter_tune_kwargs={
+                "num_samples": 2,
+                "searcher": "random",
+                "scheduler": "FIFO",
+            },
         )
         leaderboard = trainer.leaderboard()
 
-    assert len(leaderboard) == 4
+    assert len(leaderboard) == 2
 
 
 @pytest.mark.parametrize("eval_metric", ["MAPE", None])
@@ -463,17 +466,16 @@ def test_given_hyperparameters_with_spaces_and_custom_model_when_trainer_called_
     trainer = AutoTimeSeriesTrainer(
         path=temp_model_path,
         freq="H",
-        hyperparameter_tune_kwargs={
-            "num_samples": 2,
-            "searcher": "random",
-            "scheduler": "FIFO",
-        },
     )
     trainer.fit(
         train_data=DUMMY_TS_DATAFRAME,
         hyperparameters=hyperparameters,
         val_data=DUMMY_TS_DATAFRAME,
-        hyperparameter_tune=True,
+        hyperparameter_tune_kwargs={
+            "num_samples": 2,
+            "searcher": "random",
+            "scheduler": "FIFO",
+        },
     )
     leaderboard = trainer.leaderboard()
 
