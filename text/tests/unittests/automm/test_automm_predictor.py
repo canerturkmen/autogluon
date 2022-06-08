@@ -1,15 +1,12 @@
 import os
 import shutil
+from omegaconf import OmegaConf
 import pytest
 import numpy.testing as npt
 import tempfile
 import copy
-
-from omegaconf import OmegaConf
-from ray import tune
 from torch import nn
 
-from autogluon.core.hpo.ray_hpo import searcher_presets, scheduler_presets
 from autogluon.text.automm import AutoMMPredictor
 from autogluon.text.automm.utils import modify_duplicate_model_names
 from autogluon.text.automm.constants import (
@@ -17,7 +14,6 @@ from autogluon.text.automm.constants import (
     DATA,
     OPTIMIZATION,
     ENVIRONMENT,
-    DISTILLER,
     BINARY,
     MULTICLASS,
     UNIFORM_SOUP,
@@ -393,7 +389,7 @@ def test_customizing_model_names(
         assert sorted(predictor._config.model.names) == sorted(hyperparameters_gt["model.names"])
         for per_name in hyperparameters_gt["model.names"]:
             assert hasattr(predictor._config.model, per_name)
-    
+
 
 def test_model_configs():
     dataset = ALL_DATASETS["petfinder"]()
@@ -443,7 +439,9 @@ def test_model_configs():
                     'max_text_len': 512, 
                     'insert_sep': True, 
                     'text_segment_num': 2, 
-                    'stochastic_chunk': False
+                    'stochastic_chunk': False,
+                    'text_detection_length': 10,
+                    'train_augment_types' : ["synonym_replacement({'aug_p': 0.1})"],
                 }, 
                 'timm_image': {
                     'checkpoint_name': 'swin_base_patch4_window7_224', 
@@ -467,7 +465,9 @@ def test_model_configs():
                     'max_text_len': 77, 
                     'insert_sep': False, 
                     'text_segment_num': 1, 
-                    'stochastic_chunk': False
+                    'stochastic_chunk': False,
+                    'text_detection_length': 10,
+                    'train_augment_types' : ["synonym_replacement({'aug_p': 0.1})"],
                 }, 
                 'fusion_transformer': {
                     'hidden_size': 192, 
@@ -568,7 +568,6 @@ def test_modifying_duplicate_model_names():
         for per_processor in per_modality_processors:
             assert per_processor.prefix in teacher_predictor._config.model.names
 
-
 def test_mixup():
     dataset = ALL_DATASETS["petfinder"]()
     metric_name = dataset.metric
@@ -606,133 +605,48 @@ def test_mixup():
         score = predictor.evaluate(dataset.test_df)
         verify_predictor_save_load(predictor, dataset.test_df)
 
+def test_textagumentor_deepcopy():
+    dataset = ALL_DATASETS["ae"]()
+    metric_name = dataset.metric
 
-@pytest.mark.parametrize('searcher', list(searcher_presets.keys()))
-@pytest.mark.parametrize('scheduler', list(scheduler_presets.keys()))
-def test_hpo(searcher, scheduler):
-    dataset = PetFinderDataset()
-
+    predictor = AutoMMPredictor(
+        label=dataset.label_columns[0],
+        problem_type=dataset.problem_type,
+        eval_metric=metric_name,
+    )
     config = {
         MODEL: f"fusion_mlp_image_text_tabular",
         DATA: "default",
         OPTIMIZATION: "adamw",
         ENVIRONMENT: "default",
     }
-
-    hyperparameters = {
-        "optimization.learning_rate": tune.uniform(0.0001, 0.01),
-        "optimization.max_epochs": 1,
-        "model.names": ["numerical_mlp", "categorical_mlp", "fusion_mlp"],
-        "env.num_workers": 0,
-        "env.num_workers_evaluation": 0,
-    }
-    
-    hyperparameter_tune_kwargs = {
-        'searcher': searcher,
-        'scheduler': scheduler,
-        'num_trials': 2,
-    }
-
-    predictor = AutoMMPredictor(
-        label=dataset.label_columns[0],
-        problem_type=dataset.problem_type,
-        eval_metric=dataset.metric,
-    )
-    
-    save_path = os.path.join(get_home_dir(), 'hpo', f'_{searcher}', f'_{scheduler}')
-    if os.path.exists(save_path):
-        shutil.rmtree(save_path)
-
-    predictor = predictor.fit(
-        train_data=dataset.train_df,
-        config=config,
-        hyperparameters=hyperparameters,
-        time_limit=60,
-        save_path=save_path,
-        hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
-    )
-    
-    score = predictor.evaluate(dataset.test_df)
-    verify_predictor_save_load(predictor, dataset.test_df)
-    
-    # test for continuous training
-    predictor = predictor.fit(
-        train_data=dataset.train_df,
-        config=config,
-        hyperparameters=hyperparameters,
-        time_limit=60,
-        hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
-    )
-    
-    
-@pytest.mark.parametrize('searcher', list(searcher_presets.keys()))
-@pytest.mark.parametrize('scheduler', list(scheduler_presets.keys()))
-def test_hpo_distillation(searcher, scheduler):
-    dataset = PetFinderDataset()
-
-    config = {
-        MODEL: f"fusion_mlp_image_text_tabular",
-        DATA: "default",
-        OPTIMIZATION: "adamw",
-        ENVIRONMENT: "default",
-        DISTILLER: "default",
-    }
-
     hyperparameters = {
         "optimization.max_epochs": 1,
-        "model.names": ["numerical_mlp", "categorical_mlp", "fusion_mlp"],
         "env.num_workers": 0,
         "env.num_workers_evaluation": 0,
-    }
-    
-    hyperparameter_tune_kwargs = {
-        'searcher': searcher,
-        'scheduler': scheduler,
-        'num_trials': 2,
+        "data.categorical.convert_to_text": False,
+        "data.numerical.convert_to_text": False,
+        "model.hf_text.text_train_augment_types": ["synonym_replacement({'aug_p': 0.05})", "random_swap({'aug_p': 0.05})"]
     }
 
-    teacher_predictor = AutoMMPredictor(
-        label=dataset.label_columns[0],
-        problem_type=dataset.problem_type,
-        eval_metric=dataset.metric,
-    )
-    
-    teacher_save_path = os.path.join(get_home_dir(), 'hpo_distillation_teacher', f'_{searcher}', f'_{scheduler}')
-    if os.path.exists(teacher_save_path):
-        shutil.rmtree(teacher_save_path)
+    with tempfile.TemporaryDirectory() as save_path:
+        predictor.fit(
+            train_data=dataset.train_df,
+            config=config,
+            time_limit=10,
+            save_path=save_path,
+            hyperparameters=hyperparameters,
+        )
 
-    teacher_predictor = teacher_predictor.fit(
+    # Deep copy data preprocessor
+    df_preprocessor_copy = copy.deepcopy(predictor._df_preprocessor)
+    predictor._df_preprocessor = df_preprocessor_copy
+
+    # Test for copied preprocessor 
+    predictor.fit(
         train_data=dataset.train_df,
         config=config,
         hyperparameters=hyperparameters,
-        time_limit=60,
-        save_path=teacher_save_path,
+        time_limit=10,
     )
-    
-    hyperparameters = {
-        "optimization.learning_rate": tune.uniform(0.0001, 0.01),
-        "optimization.max_epochs": 1,
-        "model.names": ["numerical_mlp", "categorical_mlp", "fusion_mlp"],
-        "env.num_workers": 0,
-        "env.num_workers_evaluation": 0,
-    }
-    # test for distillation
-    predictor = AutoMMPredictor(
-        label=dataset.label_columns[0],
-        problem_type=dataset.problem_type,
-        eval_metric=dataset.metric,
-    )
-    
-    student_save_path = os.path.join(get_home_dir(), 'hpo_distillation_student', f'_{searcher}', f'_{scheduler}')
-    if os.path.exists(student_save_path):
-        shutil.rmtree(student_save_path)
 
-    predictor = predictor.fit(
-        train_data=dataset.train_df,
-        teacher_predictor=teacher_save_path,
-        config=config,
-        hyperparameters=hyperparameters,
-        time_limit=60,
-        hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
-        save_path=student_save_path,
-    )
