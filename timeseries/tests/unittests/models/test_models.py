@@ -39,7 +39,6 @@ DUMMY_HYPERPARAMETERS = {
     "epochs": 1,
     "num_batches_per_epoch": 1,
     "maxiter": 1,
-    "n_jobs": 1,
     "use_fallback_model": False,
     "model_path": "amazon/chronos-t5-tiny",
 }
